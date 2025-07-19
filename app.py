@@ -55,8 +55,15 @@ elif input_option == "RTSP Stream":
     rtsp_url = st.text_input("Enter RTSP URL", "rtsp://your_rtsp_stream_url")
     if rtsp_url:
         video_source = rtsp_url
+elif input_option == "Realtime Camera":
+    # Gunakan backend yang sesuai OS
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)  # Windows
+    # cap = cv2.VideoCapture(0, cv2.CAP_V4L2)  # Linux
+    if not cap.isOpened():
+        st.error("Failed to access webcam. Make sure camera is available and not used by another app.")
+        st.session_state.running = False
 else:
-    video_source = 0  # Default to webcam
+    st.error("Please select a valid input source.")
 
 # ========== Button Row ==========
 col1, col2, _ = st.columns([1, 1, 5])

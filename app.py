@@ -37,26 +37,36 @@ input_option = st.selectbox(
 video_source = None
 # Ganti bagian input YouTube di kode sebelumnya
 if input_option == "Video File/YouTube":
-    video_input = st.text_input("Enter YouTube URL or upload a video file", "")
-    uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi", "mov"])
+    youtube_url = st.text_input("Enter YouTube URL (optional)", "")
+    uploaded_file = st.file_uploader("Upload a video file (optional)", type=["mp4", "avi", "mov"])
     if uploaded_file:
+        # Create a temporary file to save the uploaded video
         tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
         tfile.write(uploaded_file.read())
         video_source = tfile.name
-    elif video_input.startswith("http"):
+        st.info(f"Video file uploaded: {uploaded_file.name}")
+    elif youtube_url.startswith("http"):
         try:
-            ydl_opts = {'format': 'best[ext=mp4]'}
+            # Use yt-dlp to get the direct URL of the best quality MP4 stream
+            ydl_opts = {'format': 'best[ext=mp4]', 'noplaylist': True}
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(video_input, download=False)
+                info = ydl.extract_info(youtube_url, download=False)
+                # Get the direct URL of the video stream
                 video_source = info['url']
+            st.success("YouTube video loaded successfully.")
         except Exception as e:
-            st.error(f"Error loading YouTube video: {e}")
+            st.error(f"Error loading YouTube video: {e}. Please check the URL or try another source.")
 elif input_option == "RTSP Stream":
     rtsp_url = st.text_input("Enter RTSP URL", "rtsp://your_rtsp_stream_url")
-    if rtsp_url:
+    if rtsp_url and rtsp_url != "rtsp://your_rtsp_stream_url": # Ensure URL is not default placeholder
         video_source = rtsp_url
-else:
-    video_source = 0  # Default to webcam
+    else:
+        st.warning("Please enter a valid RTSP URL to start detection.")
+elif input_option == "Realtime Camera":
+    # Streamlit's native camera input for browser camera access
+    st.info("Click 'Start Detection' and allow browser camera access to begin.")
+    # The actual camera input will be handled in the processing loop below
+    pass # No video_source needed here yet, it comes from st.camera_input
 
 # ========== Button Row ==========
 col1, col2, _ = st.columns([1, 1, 5])

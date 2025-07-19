@@ -3,47 +3,15 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 import time
-
-# ========== Custom CSS ==========
-st.markdown(
-    """
-    <style>
-    body {
-        background-color: #0f1117;
-        color: #ffffff;
-    }
-    .main-container {
-        background-color: #1e2128;
-        padding: 2rem;
-        border-radius: 10px;
-        margin-bottom: 1rem;
-    }
-    .title {
-        font-size: 2rem;
-        font-weight: 600;
-        text-align: left;
-        margin-bottom: 0.5rem;
-        color: #ffffff;
-    }
-    .subtitle {
-        font-size: 1rem;
-        color: #aaaaaa;
-        margin-bottom: 1.5rem;
-    }
-    .status {
-        font-size: 0.95rem;
-        margin-top: 1rem;
-        color: #cccccc;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+import youtube_dl
+import pafy
+import os
+import tempfile
+import yt_dlp
 
 # ========== Title Section ==========
-st.markdown('<div class="main-container">', unsafe_allow_html=True)
-st.markdown('<div class="title">Smart Surveillance: Real-Time Human Detection</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Monitor presence in real-time using YOLOv8-powered object detection.</div>', unsafe_allow_html=True)
+st.title("Smart Surveillance: Real-Time Human Detection")
+st.caption("Monitor presence using YOLOv8-powered object detection from camera, video, or RTSP stream.")
 
 # ========== Load Model ==========
 @st.cache_resource
@@ -58,14 +26,46 @@ if 'running' not in st.session_state:
 if 'notification_shown' not in st.session_state:
     st.session_state.notification_shown = False
 
-# ========== Button Row (One Line, Left Aligned) ==========
-left_col, middle_col, _ = st.columns([1, 1, 5])
-with left_col:
-    if st.button("▶ Start Camera"):
+# ========== Input Selection ==========
+input_option = st.selectbox(
+    "Select Input Source",
+    ["Realtime Camera", "Video File/YouTube", "RTSP Stream"],
+    help="Choose the source for human detection: camera, video file/YouTube link, or RTSP stream."
+)
+
+# ========== Input Handling ==========
+video_source = None
+# Ganti bagian input YouTube di kode sebelumnya
+if input_option == "Video File/YouTube":
+    video_input = st.text_input("Enter YouTube URL or upload a video file", "")
+    uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi", "mov"])
+    if uploaded_file:
+        tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+        tfile.write(uploaded_file.read())
+        video_source = tfile.name
+    elif video_input.startswith("http"):
+        try:
+            ydl_opts = {'format': 'best[ext=mp4]'}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(video_input, download=False)
+                video_source = info['url']
+        except Exception as e:
+            st.error(f"Error loading YouTube video: {e}")
+elif input_option == "RTSP Stream":
+    rtsp_url = st.text_input("Enter RTSP URL", "rtsp://your_rtsp_stream_url")
+    if rtsp_url:
+        video_source = rtsp_url
+else:
+    video_source = 0  # Default to webcam
+
+# ========== Button Row ==========
+col1, col2, _ = st.columns([1, 1, 5])
+with col1:
+    if st.button("▶ Start Detection", type="primary"):
         st.session_state.running = True
         st.session_state.notification_shown = False
-with middle_col:
-    if st.button("⏹ Stop Camera"):
+with col2:
+    if st.button("⏹ Stop Detection"):
         st.session_state.running = False
 
 # ========== Detect Function ==========
@@ -86,29 +86,33 @@ def detect_people(frame):
 
     return annotated_frame, people_detected
 
-# ========== Kamera Stream ==========
-if st.session_state.running:
-    cap = cv2.VideoCapture(0)
-    stframe = st.empty()
+# ========== Video Stream Processing ==========
+if st.session_state.running and video_source:
+    cap = cv2.VideoCapture(video_source)
+    if not cap.isOpened():
+        st.error("Failed to open video source.")
+        st.session_state.running = False
+    else:
+        stframe = st.empty()
+        while st.session_state.running:
+            ret, frame = cap.read()
+            if not ret:
+                st.error("Failed to read frame from video source.")
+                break
 
-    while st.session_state.running:
-        ret, frame = cap.read()
-        if not ret:
-            st.error("Gagal membuka kamera.")
-            break
+            annotated_frame, people_detected = detect_people(frame)
+            frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+            stframe.image(frame_rgb, channels="RGB", use_column_width=True)
 
-        annotated_frame, people_detected = detect_people(frame)
-        frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
-        stframe.image(frame_rgb, channels="RGB", use_column_width=True)
+            if people_detected and not st.session_state.notification_shown:
+                st.success("Person detected.")
+                st.session_state.notification_shown = True
 
-        if people_detected and not st.session_state.notification_shown:
-            st.success("Person detected.")
-            st.session_state.notification_shown = True
+            time.sleep(0.05)  # Control frame rate
 
-        time.sleep(0.1)
-
-    cap.release()
+        cap.release()
+        if input_option == "Video File/YouTube" and uploaded_file:
+            os.remove(video_source)  # Clean up temporary file
 
 # ========== Footer Info ==========
-st.markdown('<div class="status">Klik "Start Camera" untuk memulai streaming dan deteksi orang. Klik "Stop Camera" untuk berhenti.</div>', unsafe_allow_html=True)
-st.markdown('</div>', unsafe_allow_html=True)
+st.info("Select an input source, then click 'Start Detection' to begin human detection. Click 'Stop Detection' to halt.")
